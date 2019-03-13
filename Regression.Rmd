@@ -1,0 +1,196 @@
+---
+title: "JarvinenRegression"
+author: "Niklas Jarvinen"
+date: "December 14, 2018"
+output: html_document
+---
+
+
+```{r}
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(corrplot)
+library(GGally)
+library(ModelMetrics)
+```
+
+```{r}
+load('HomeRunsNewdf.rdata')
+```
+
+Load the libraries and dataframes I created last time.
+
+```{r}
+set.seed(28)
+InFit <- createDataPartition(y = HomeRuns$HR, p = .7, list = FALSE)
+
+HR_Fit <- HomeRuns[InFit,]
+HR_Accuracy <-HomeRuns[-InFit, ]
+```
+
+Split my test and accuracy group.
+
+```{r - Just Using Past Data}
+Fit1 <- lm(HR ~ HR1 + HR2, data = HR_Fit)
+summary(Fit1)
+```
+
+For the first model I just wanted to use past home runs totals to see how far it could get me. Turns out that it's not very far alone. It's not a bad start but relying on a players past home run totals alone will only get you so far.
+
+```{r - Overfit Model}
+Fit2 <- lm(HR ~ PA + Doubles + BBPct + KPct + BB_K + OBP + BABIP + GB_FB + LDPct + GBPct + FBPct + wFB + wSL + wCT + wCB + wCH + wSF + OSwingPct + ZSwingPct + SwingPct + OContactPct + ZContactPct + ContactPct + ZonePct + FStrikePct + SwStrPct + PullPct + CentPct + OppoPct + SoftPct + MedPct + HardPct + HR1 + HR2 + Age2, data = HR_Fit)
+summary(Fit2)
+```
+
+This is just the overfit model with everything that I thought might be relevant, as you can see, there isn't much that is significant when all of this is put together but interestingly enough it seems as if pitch type is very important, if a hitter can hit each pitch well that would certainly lead to more home runs, but this will be interesting to test out. This model will be hard to beat as far as model fitting goes.
+
+```{r - Using Linear Pitch Weights}
+Fit3 <- lm(HR ~ wFB + wCH + wSL + wCT + wCB + wSF, data = HR_Fit)
+summary(Fit3)
+```
+
+Wow! Just the pitch types alone can give us a model that accounts for almost half the data, not too shabby for such a simple model. This is definitely something to keep in mind as I work toward building my "best" model for sure.  
+
+```{r - Using FG Plate Discipline Data}
+Fit4 <- lm(HR ~ OSwingPct + ZSwingPct + SwingPct + OContactPct + ZContactPct + ContactPct + ZonePct + FStrikePct + SwStrPct, data = HR_Fit)
+summary(Fit4)
+```
+
+Plate Discipline just does not matter as much as some people think it does. These measures of it put together can only account for 25% of the data, which in a model with this many variables is surprisingly bad in my opinion. I might not use many of these variables in my attempt at a best model, I mean not even one of them is significant.
+
+```{r - Hit Type Model}
+Fit5 <- lm(HR ~ PullPct + CentPct + OppoPct + SoftPct + MedPct + HardPct + FBPct + GBPct + LDPct, data = HR_Fit)
+summary(Fit5)
+```
+
+Hit type kind of matters but when you blend them altogther you really get mush. It's better than my plate dicsipline model but not by very much and that isn't saying much at all.
+
+```{r - Attempt at my Positive Model idea}
+Fit6 <- lm(HR ~ Age2 + HR1 + HR2 + PA + Doubles + wFB + FBPct + BBPct + HardPct + OBP + PullPct, data = HR_Fit)
+summary(Fit6)
+```
+
+Okay so starting to put everything together here including my handy age variable that I made on the fly that actually kind of is significant here. I think it's amazing how much more 2017 home runs mattered more than 2016 home runs. This model is a very good start which makes sense considering I only used variables I found to have positive correlation and just used my baseball and stats knowledge to put it together, but it's not quite where it should be, there's stuff still missing that in this dataset I could definitely use to better it.
+
+```{r - My model idea with penalties for negative correlation}
+Fit7 <- lm(HR ~ Age2 + HR1 + HR2 + PA + Doubles + wFB + FBPct + BBPct + HardPct + OBP + PullPct + GBPct + ZonePct + MedPct, data = HR_Fit)
+summary(Fit7)
+```
+
+That stuff can start by "adding" in the things with high or medium negative correlations to make the model better, and it does this but only ever so slightly. Not good enough for me.
+
+```{r - Trying this model 7, just with all pitch linear weights}
+Fit8 <- lm(HR ~ Age2 + HR1 + HR2 + PA + Doubles + wFB + wCB + wSL + wCH + wSF + wCT + FBPct + BBPct + HardPct + OBP + PullPct + GBPct + ZonePct + MedPct, data = HR_Fit)
+summary(Fit8)
+```
+
+Now here I'm trying to add in the pitch linear weights since they did so well by themselves and it actually really helps my adjusted R squared, which is what I am looking at in this case since it penalizes you for adding variables. Pitch weights really do matter a lot, and while there may be some multicollinearity since home runs are weighted more in this stat, I don't think it is enough to not use these seemingly really important variables.
+
+```{r - Taking out some not important variables}
+Fit9 <- lm(HR ~ Age2 + HR1 + + PA + Doubles + wFB + wCB + wSL + wCH + wSF + wCT + FBPct + BBPct + HardPct + OBP + GBPct + ZonePct, data = HR_Fit)
+summary(Fit9)
+```
+
+I just took out the non-significant variables here from last model to try and imrpove my model, but it makes it worse in the end.
+
+```{r - One more try at improving my more simple model}
+Fit10 <- lm(HR ~ Age2 + HR1 + + PA + Doubles + wFB + wCB + wSL + wCH + wSF + wCT + FBPct + HardPct + OBP + GBPct + ZonePct, data = HR_Fit)
+summary(Fit10)
+```
+
+Just tried to take walk percentage out of the picture since it seems to be a bad indicator of home runs but there is no luck here. It's basically the same fit.
+
+```{r - Trying the best model with no past HR data so rookies could run through once}
+Fit11 <- lm(HR ~ Age2 + PA + Doubles + wFB + wCB + wSL + wCH + wSF + wCT + FBPct + BBPct + HardPct + OBP + PullPct + GBPct + ZonePct + MedPct, data = HR_Fit)
+summary(Fit11)
+```
+
+Just made a model here for players with no past HR data to run through, since seemingly only the past season matters when it comes to hitting the home runs, so it only needs to be used on guys like Ronald Acuna Jr. who were rookies.
+
+```{r _ Predict}
+Predictlm1 <- predict(Fit1, newdata=HR_Accuracy)
+Predictlm2 <- predict(Fit2, newdata=HR_Accuracy)
+Predictlm3 <- predict(Fit3, newdata=HR_Accuracy)
+Predictlm4 <- predict(Fit4, newdata=HR_Accuracy)
+Predictlm5 <- predict(Fit5, newdata=HR_Accuracy)
+Predictlm6 <- predict(Fit6, newdata=HR_Accuracy)
+Predictlm7 <- predict(Fit7, newdata=HR_Accuracy)
+Predictlm8 <- predict(Fit8, newdata=HR_Accuracy)
+Predictlm9 <- predict(Fit9, newdata=HR_Accuracy)
+Predictlm10 <- predict(Fit10, newdata=HR_Accuracy)
+Predictlm11 <- predict(Fit11, newdata=HR_Accuracy)
+```
+
+```{r}
+AccuracyDF <- data.frame(AllFitTotal=HR_Accuracy[,"HR"],
+                          Fit1Total=Predictlm1,
+                          Fit2Total=Predictlm2,
+                          Fit3Total=Predictlm3,
+                          Fit4Total=Predictlm4,
+                          Fit5Total=Predictlm5,
+                          Fit6Total=Predictlm6,
+                          Fit7Total=Predictlm7,
+                          Fit8Total=Predictlm8,
+                          Fit9Total=Predictlm9,
+                          Fit10Total=Predictlm10,
+                          Fit11Total=Predictlm11)
+
+head(AccuracyDF)
+tail(AccuracyDF)
+```
+
+```{r}
+names(AccuracyDF)[1] <- "AllFitTotal"
+head(AccuracyDF)
+```
+
+
+```{r}
+tot_rmse_lm1 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit1Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm2 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit2Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm3 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit3Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm4 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit4Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm5 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit5Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm6 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit6Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm7 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit7Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm8 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit8Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm9 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit9Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm10 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit10Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+tot_rmse_lm11 <- sqrt(with(AccuracyDF,sum((AllFitTotal - Fit11Total)^2, na.rm = TRUE))/nrow(AccuracyDF))
+```
+
+
+```{r}
+tot_rmse_lm1
+tot_rmse_lm2
+tot_rmse_lm3
+tot_rmse_lm4
+tot_rmse_lm5
+tot_rmse_lm6
+tot_rmse_lm7
+tot_rmse_lm8
+tot_rmse_lm9
+tot_rmse_lm10
+tot_rmse_lm11
+```
+
+Fit the models with my accuracy data and got a RMSE and it could definitely be worse. I can't get the home runs completely correct but the RMSE for home runs in my best and realistic model are very close which I am happy about since my realistic model is much more simple than the overfit model. I learned what variables really should go into a model when predicting home runs and I'm pretty happy with my current results. It's rare to have a models error get better on the accuracy and I don't think i did that but I made some models that can get on average within a few home runs of being correct which is nothing to sneeze at, especially since it's so hard to predict things like how an injury might effect a perfectly normal 29 year old player in his prime when it happens midseason. There's really no way I can get it absolutley nothing. I would improve upon this by adding the Statcast variables possibly one day and also trying to study more into age so I could make my age variable even more robust. I also think that if I studied past years home runs effects a little more and possibly weighted them by importance from my findings that my model could improve. Here's some graphs of my models to just leave you with a more graphical display of my work. My model 10 is my model I'd use to forecast since it's much more simple and I really think with more data the RMSE might even out and make 8 the best model.
+
+```{r}
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit1Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit2Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit3Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit4Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit5Total)) + geom_point() + geom_smooth(method = "lm")
+```
+
+```{r}
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit6Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit7Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit8Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit9Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit10Total)) + geom_point() + geom_smooth(method = "lm")
+ggplot(data=AccuracyDF, aes(x=AllFitTotal,y=Fit11Total)) + geom_point() + geom_smooth(method = "lm")
+```
+

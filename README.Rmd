@@ -1,0 +1,16 @@
+---
+title: "README"
+author: "Niklas Jarvinen"
+date: "December 14, 2018"
+output: html_document
+---
+
+What I uploaded was data I took from Fangraphs.com for a regression model to be made to predict the amount of home runs a player will hit.  
+
+The data just has the data I took and the Rdata file is an updated dataframe I saved to use in my second Markdown notebook.  
+
+My first R Markdown is some statistical analysis with the data and some problem solving on what I may want to do, all of the variables and everything is explained nicely with the graph and statistcis in the Markdown document.  
+
+The second Markdown is my regression analysis and where I put my models togehter.  
+
+I hope you enjoy and learn something new!  

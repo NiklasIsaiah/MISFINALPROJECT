@@ -1,0 +1,358 @@
+---
+title: "JarvinenEDA"
+author: "Niklas Jarvinen"
+date: "December 6, 2018"
+output: html_document
+---
+
+To start this project, I have to load in the packages and data that I am going to use. I will explain 
+what I am doing and what the variables mean below.
+
+```{r - Load Libraries}
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(corrplot)
+library(GGally)
+```
+
+Reading in the data and also Home Runs 1 and 2 load as charecters because of the NAs, which will be ignored and I'll get to that later, but they need to be integers and lets count the total NAs we are dealing with and double check everything is ready for data analysis. I made this by exporting data into a csv file from FanGraphs after sorting columns and excluding players with less than 200 plate appearances and performing a VLOOKUP for past years Home Run totals in a seperate notebook and combined it into one. The data prep took roughly an hour but was pretty painless.
+
+```{r - Read in Data}
+library(readr)
+HomeRuns <- read_csv('data/HomeRunsPredictorDataRevised.csv')
+
+HomeRuns$HR1 <- as.integer(HomeRuns$HR1)
+HomeRuns$HR2 <- as.integer(HomeRuns$HR2)
+
+sum(is.na(HomeRuns$HR1))
+sum(is.na(HomeRuns$HR2))
+
+str(HomeRuns)
+```
+
+I am attempting to create a regression model to accurately predict individual players Home Run totals. I have created a spreadsheet 
+using data from FanGraphs.com and I will measure each variable and look to see what variables I might be more inclined to use in 
+finding the right model. If I ended up using all of these, I would have a very overfit model and the best models are often the most 
+simple. I excluded any stats that heavily rely on Home Run data to calculate, so for example, there is no slugging percentage because a 
+big part of that equation is Home Runs. I kept things like on base percentage though because home runs are weighted the same as a 
+single in this calculation so it's more of a measure of hitting ability than power ability. I also included Home Run to flyball ratio 
+because they do track this and it can be above or below league average, but I likely will refrain from using it in the model because it 
+directly uses home runs in the calculation. It will still be helpful to see some statistics about this. I will do that in this document 
+and do the regression analysis in the next document. I will give a short explination for each of the variables below. Here are the 
+initial inputs.
+
+**Name**: The players name in the data set, used here for confirmation all the data matches up  
+**HR**: The dependent variable in this study, home runs the player hit  
+**Age**: The players age  
+**PA**: The amount of time a player bats including walks, hit by pitches, sacirfices and so on  
+**Doubles**: The amount of doubles a player hits  
+**BBPct**: The amount of walks a player has divided by plate appearances  
+**KPct**: The amount of strikeouts a player has divided by plate appearances  
+**BB_K**: A hitters strikeout to walk ratio  
+**OBP**: The times a player reaches base via hit, walk, HBP divided by plate appearances  
+**BABIP**: A players batting average on balls they into play (excludes strikeouts)  
+**GB_FB**: A hitters ground ball to fly ball ratio  
+**LDPct**: Line Drive Percentage is the percentage of balls a player hits that are classified as line drives  
+**GBPct**: Ground Ball Percentage is the percentage of balls a player hits that are classified as ground balls  
+**FBPct**: Fly Ball Percentage is the percentage of balls a player hits that are classified as fly balls  
+**HR_FB**: The percentage of fly balls that are home runs for a player  
+**wFB/wSL/wCT/wCB/wCH/wSF**: Linear weights of run expectancy for each pitch type, so if a player hits a double on a 2-0 count off of a fastball, their wFB would get the linear weight equal to that, then if they strike out on a fastball next at-bat they'd get minus a linear weight for the same stat. Fastball, Slider, Cutter, 
+Curveball, Changeup and Splitter  
+**OSwingPct**: Swings at pitches outside of the strikezone for a player divided by the players pitches seen outside the strikezone  
+**ZSwingPct**: Swings at pitches inside the strikezone for a player divided by the players pitches seen inside the strikezone  
+**SwingPct**: Swings divded by pitches to a player  
+**OContactPct**: Swings in which a player made contact on pitches outside of the strikezone divided by pitches seen outside the zone and swung at by the player  
+**ZContactPct**: Swings in which a player made contact on pitches inside of the strikezone divided by the pitches seen and swung at inside the zone for a player  
+**ContactPct**: Number of pitches in which contact was made divided by swings for a player  
+**ZonePct**: Percentage of pitches seen inside the strikezone for a player by total pitches they have seen  
+**FStrikePct**: Percentage of first pitch strikes seen by a player in plate appearances  
+**SwStrPct**: Swings and misses by a player divided by total pitches seen  
+**Pull/Center/OppoPct**: A player has a pull/center/opposite field, for a lefty their pull field is right field and righty their pull field is left field, center is 
+center field area for both types of hitters and opposite field is the opposite of their pull field, this is the percentage of a players hits that went each way
+**Soft/Med/HardPct**: Percentage of a players contact on batted balls classified by how they hit the ball, sum to 100%  
+**HR1**: Home Runs from 2017 (previous season)  
+**HR2**: Home Runs from 2016 (Two season prior)  
+
+```{r}
+summary(HomeRuns)
+```
+
+Everything looks to be lined up well to run correlation and some graphs, all the information is as expected, we have some NAs for HR1 and HR2 but I will build a seperate model for players without these numbers. One issue that I can not fix in the scope of this project would be project home runs for a potential rookie, that would require extra analysis of players rookie seasons and likely I'd match them up in a tiered group of prospect rankings from either MLB.com or Baseball America. I could also make a model without past homers or I could run a players minor league stats through this and regress it to the mean and then deduct a percentage for facing a lower level of competition. Minor league to major league equivalent stats actually DO exist! Anyways let's just tackle finding out what variables to use in this regression model so we can make our semi-decent home run prediction model.  
+
+```{r - Correlation Plot 1}
+corHR1 <- cor(HomeRuns[,2:5])
+corrplot.mixed(corHR1)
+
+corHR2 <- cor(HomeRuns[,c(2,6:10)])
+corrplot.mixed(corHR2)
+
+corHR3 <- cor(HomeRuns[,c(2,11:15)])
+corrplot(corHR3, method = "pie")
+
+corHR4 <- cor(HomeRuns[,c(2,16:20)])
+corrplot(corHR4, method = 'square')
+
+corHR4v2 <- cor(HomeRuns[,c(2,16:20)])
+corrplot.mixed(corHR4v2)
+```
+
+Wow I can see why R is a great statistical program at this point. You can't do this in Excel so quickly without spending a lot of time an effort, especially with no add-ins. I added Home Runs to each correlation plot because these are the dependent variable and I would like to measure everything against them mostly. I know I can use interaction between to variables in a regression model, but I'd like to keep this model more simple and I don't think I really need to use them since I have many useful ratios at my disposal already. Age is an issue here because almost all projection system account for it. As you get older you tned to decline unless you're Barry Bonds. I'll have to figure out a way to incorporate this into model since the correlation is at -.09 or basically nothing. The big winners so far are plate appearances, doubles, on base percentage, linear weighted fastball runs, flyballs hit and to a certain extent walks. I was hoping for higher line drive correlation since line drives have the highest batting average of any hit, but it makes sense that more would fall in for hits than leave the playing field. I also like the ground ball percentage negative effect, as unless it's the rare inside the park homer you will not be hitting a home run on a ground ball. Another disappointment was that FanGraphs didn't have MLB's new Statvast data avaialable because average fly ball distance and barrels, which are highly well hit balls in the top tier of batted balls measured by am percentage, are tracked. If I had to add anything to this model those would likely be really useful and it's definitely something to think about in the future of adding, but for right now I still think we can build this off of FanGraphs data, and these might have even been redudent of that.
+
+```{r -Correlation Plots 2}
+corHR5 <- cor(HomeRuns[,c(2,21:25)])
+corrplot.mixed(corHR5)
+
+corHR6 <- cor(HomeRuns[,c(2,26:30)])
+corrplot.mixed(corHR6)
+
+corHR7 <- cor(HomeRuns[,c(2,31:36)])
+corrplot.mixed(corHR7)
+
+corHR8 <- cor(na.omit(HomeRuns[,c(2,37:38)]))
+corrplot.mixed(corHR8)
+```
+
+A lot more "meh" here. There's a semi-strong negative correlation between ZonePct and HR, which is odd but makes sense in a way because good hitters wouldn't see a lot of strikes overall. Other than that only pull and hard percentages have a positive correlation. Medium contact has worse negative correlation than soft contact. Home Runs from 2017 and 2016 are highly correlated which I will go over below. Most of these correlations are between -.5 and .5 because there's a decent amount of data and truly it's hard to find one true killer variable because while some guys who hit the ball to their pull field for homers, there's another hitter who has a different approach and uses the opposite field as well, former Tiger JD Martinez and current Tiger Miguel Cabrera are known for this. JD hit many home runs near me when I used to have season tickets in right field despite being a right handed hitter. For guys like that there's hitters like Joey Gallo who when they hit everybody moves the right side of the field since he hits left handed and will almost always pull the ball. Due to this, the regression model is a bit harder to make and that's why it'll be multiple regression.
+
+```{r}
+corHRMatrix <- cor(HomeRuns[,c(2:38)])
+corHRMatrix
+```
+
+Here's a correlation matrix which is just a big chart for everything I just did, it's more for reference than going over results as I already highlighted the big takeaways.
+
+```{r - Previous Years HRs}
+ggplot(HomeRuns,aes(x=HR,y=HR1)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=HR2)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Tom Tango, a famed baseball statatican came up with a projection system called Marcel, which I'm pretty sure is named after the monkey from "Friends." He named it this because people bugged him to make a projection system since he does so much good statistical baseball research but in reality Tango just wasn't interested in doing this so he quickly made a very simple system that took a players last three home run totals, an age factor and regression to the league mean. I implemented the first two into this model but since it's regression I will add other variables rather than regressing to league mean, but it's again something one day I could add to this model. As you can see here though, a players last two seasons of home run totals are highly correlated with future totals.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR, fill=Age)) + geom_histogram(binwidth = 2) + facet_wrap(~Age)
+```
+
+Okay, here I am just trying to see if there's any patterns for any age in home runs in the faceted histogram, but this is just a bunch of randomness.
+
+```{r}
+ggplot(HomeRuns) + geom_boxplot(aes(x = Age, y = HR)) + facet_wrap(~Age)
+```
+
+We can see that the mean typically grows or stays the same froma ges 24-230 then slowly starts to go down.
+
+```{r}
+HomeRuns2 <- HomeRuns$HR >= 20
+HomeRuns3 <- HomeRuns[HomeRuns2,]
+```
+
+Let's try and just take guys who hit 20 homers and see if power hitters show any more patterns.
+
+```{r}
+ggplot(HomeRuns3,aes(x=HR, fill=Age)) + geom_histogram(binwidth = 2) + facet_wrap(~Age)
+```
+
+Yeah there's not much more here as far as patterns go.
+
+```{r}
+HomeRuns$Age2 <- 29 - HomeRuns$Age
+HomeRuns$HRDiff <- HomeRuns$HR - HomeRuns$HR1
+
+ggplot(HomeRuns,aes(x=HRDiff,y=Age2)) + geom_point() +geom_smooth(method = 'lm')
+```
+
+So now I'm designating 29 as my age of prime. Typically guys have their best seasons between 28-32, Miguel Cabrera won his MVPs in his age 28 and 29 seasons. Also Tom Tango uses 29 as his age in his projection system. If a guy is under 29 he gets credit for getting better when projeting next seasons home run total and if he's over 29 than he is expected to start aging and get worse. I also created a HR Difference column to see the difference in home runs hit for a player from 2017 to 2018 to measure this, so if they hit less homers in 2018 than 2017 they will have a negative value.
+
+```{r}
+OldAge <- HomeRuns$Age >= 29
+HomeRuns4 <- HomeRuns[OldAge,]
+
+ggplot(HomeRuns4,aes(x=HRDiff, fill=Age)) + geom_histogram(binwidth = 2)
+
+ggplot(HomeRuns4,aes(x=HR1,y=HR)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns4) + geom_boxplot(aes(x = Age, y = HR)) + facet_wrap(~Age)
+
+```
+
+That histogram looks like roughly what I'm looking for! There's more guys on the negative side of the graph. Looks like being 30 really does mean you're getting old. Now we just have to check the mean and median for the young players and hope that it's less, and hopefully even positive, but due to variance we are looking for a number a few left of 0 for this variable and around 0 for the young guys. Also we can see the pattern of the average typically going down in the boxplot.
+
+```{r}
+mean(na.omit(HomeRuns4$HRDiff))
+median(na.omit(HomeRuns4$HRDiff))
+```
+
+-4 is both the mean and median which is good because that means the average over 29 player lost 4 homers from 2017 to 2018. That justifies my theory.
+
+```{r}
+YoungAge <- HomeRuns$Age <= 29
+HomeRuns5 <- HomeRuns[YoungAge,]
+
+ggplot(HomeRuns5,aes(x=HRDiff, fill=Age)) + geom_histogram(binwidth = 2)
+
+ggplot(HomeRuns5,aes(x=HR1,y=HR)) + geom_point() +geom_smooth(method = 'lm')
+ggplot(HomeRuns5) + geom_boxplot(aes(x = Age, y = HR)) + facet_wrap(~Age)
+
+mean(na.omit(HomeRuns5$HRDiff))
+median(na.omit(HomeRuns5$HRDiff))
+```
+
+There's now the young players above. The mean and median are roughly -1, which is pretty much 0, especially considering guys who may skew the data due to injuries. This Age2 variable will penalize older player in my regression model which is basically what I am looking for it to do, so it's not perfect becuase I'd rather have the average and median for this group to be positive, it will work for my model for sure. The average typically goes here on the boxplots too except for the pesky 26 and 27 year olds. Seems like Tango was right on his cutoff point though.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=PA)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Now I just simply made a scatter plot of each one of the other variables to graphically see a relationship, I know this is what my Forecasting professor, Professor Roumani would want me to do. We can see plate appearances really line up well with home runs, even almost as good as previous seasons home run totals. This makes sense because you need to get up to hit in order to hit home runs, you can't do that from the bench. There's a trend here, more PAs, more longballs.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=wFB)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=wCB)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=wSL)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=wCH)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=wCT)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=wSF)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Well it turns out being able to hit a fastball good really helps you hit home runs in the MLB. It is the fastest and most common pitch, so being able to hit well leads to homers. Every other pitch has a slight positive slope, which makes sense because if you hit a changeup really well, you likely will hit more home runs, but overall the other pitches are not very good indicators of home runs since I expect a positive slope I'd almost need more to put this in my model, though I might make a model just based on how well you can hit each pitch and we can see what pitches are actually significant.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=Doubles)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+My dad used to help me study and draft my fantasy teams, we still do a league together with some Texas Rangers beat writers (his best friend moved to Texas) and one of the first bits of advice he told me for drafting in the late round was if I was looking for power hitters that were going to breakout to look at doubles because if a guy hits a lot of doubles then he likely just missed those hits for home runs since doubles are usually hit deep. It's nowhere near perfect, especially with the Statcast numbers now where you can know how hard and far every hit goes, but sure enough there's some pretty high correlation here.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=BB_K)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=BBPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=KPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Strikeouts and walks are two of three true outcomes in baseball along with home runs. This means these are the only outcomes a hitter has complete control of. In today's game a lot of players strikeout often and it is often attributed to lower averages but higher home runs. We can see that walks have a bit of a correlation but strikeouts don't have much of one at all, the thing is that strikeouts actually seem to have a small positive trend line, so interestingly enough strikeout prone hitters tend be better power hitters on average. Taking a walk compared to a strikeout is seen as a sign of a good eye, but we can see this barely translates into hitting for power.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=OBP)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Home Runs calculate into this stat by times on base so there is some multicollinearity here, but not too much as these weigh the same as any other time on base. Being a good hitter does have somewhat of a relationship with hitting homers.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=BABIP)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+There's really nothing to see here, despite the fact that you'd think having a good average on balls in play would lead to having more homers.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=OSwingPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+These are pitches outside of the strikezone that are swung at, so the freeswingers have no relationship with home runs, but it doesn't hurt them to swing often, even if they swing at a lot of bad pitches.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=ZSwingPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Again, swinging often helps you and it does help you slightly more if you swing at pitches in the zone.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=SwingPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+This is a case of two groups cancelling each other out, there's really selective power hitters like Joey Votto and guys who swing at everything like Khris Davis whom both have power, so how much you swing really has no effect on home runs.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=OContactPct)) + geom_point(color = "red") + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=ZContactPct)) + geom_point(color= "dark red") + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=ContactPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+These graphs all show that being a good contact hitter might actually hurt you in the long run if you're trying to exclusively hit home runs because making contact could just mean weak contact for outs. There's actually a beauty to swinging hard just in case you hit the ball in today's game it seems. The type of contact you make is more important than making it or where you make it.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=ZonePct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=FStrikePct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+This proves that good power hitters truly see less first pitch strikes and strikes altogether, something interesting to keep in mind when I make my model because a sign of a power hitter could be lower percentages when it comes to these stats.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=SwStrPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Another graphical example of how swinging leads to more homers, even if you miss the ball often.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=PullPct)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=CentPct)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=OppoPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=SoftPct)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=MedPct)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=HardPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=GB_FB)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+More fly balls compared to grounder = a better chance at a home run. Just look at the trend, and a negative trend is actually good for home runs in this case.
+
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=GB_FB)) + geom_point(color =ifelse(((abs(HomeRuns$GB_FB)>1.5)),"pink", "black")) + geom_smooth(method = 'lm')
+```
+
+Just wanted to make this graph more appealing to the eye and show the importance to keeping the ball in air even more.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=LDPct)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=GBPct)) + geom_point() + geom_smooth(method = 'lm')
+ggplot(HomeRuns,aes(x=HR,y=FBPct)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Groundballs definitely do not equate to home runs, and I think this will be the key negative number variable in a model that I'll allow negaive variables in, I also have a feeling that people who hit a lot of flyballs will lead FBPct be in my key best model, even though the trend line looks skewed upwards a bit here. I'm actually surprised about line drives having that much of a negative effect because they usually indicate a very good hitter, but it looks like I'm going nowhere with that.
+
+```{r}
+ggplot(HomeRuns,aes(x=HR,y=HR_FB)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Probably not going to use this in my model since it directly involves home runs, but there's a league average for this number and chances are if a player is above the trendline that there homers will decline the next season, or they might consistently outperform this average due to an uppercut swing or playing in a park that favors hitters and so on.  
+
+Overall, I have a pretty good feel on my variables and what I'm working with now and definitely a better idea of what models I want to build, even if I don't get a really great model I think I can learn some important things about these numbers and how they can project home runs, but the goal is to build a great model to use for fantasy baseball predictions (and then to get an A on this project and signed to an MLB team to do statistical analysis).
+
+```{r}
+save(HomeRuns, file = "HomeRunsNewdf.rdata")
+```
+
+
